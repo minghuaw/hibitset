@@ -69,29 +69,40 @@ use util::*;
 ///
 /// Note, a `BitSet` is limited by design to only `usize**4` indices.
 /// Adding beyond this limit will cause the `BitSet` to panic.
-#[derive(Clone, Debug, Default)]
-pub struct BitSet {
-    layer3: usize,
+#[derive(Clone, Debug)]
+pub struct BitSet<const N: usize> {
+    layer3: [usize; N],
     layer2: Vec<usize>,
     layer1: Vec<usize>,
     layer0: Vec<usize>,
 }
 
-impl BitSet {
+impl<const N: usize> Default for BitSet<N> {
+    fn default() -> Self {
+        Self {
+            layer3: [0; N],
+            layer2: Vec::new(),
+            layer1: Vec::new(),
+            layer0: Vec::new(),
+        }
+    }
+}
+
+impl<const N: usize> BitSet<N> {
     /// Creates an empty `BitSet`.
-    pub fn new() -> BitSet {
+    pub fn new() -> BitSet<N> {
         Default::default()
     }
 
     #[inline]
     fn valid_range(max: Index) {
-        if (MAX_EID as u32) < max {
+        if ((MAX_EID as u32) * N as u32) < max {
             panic!("Expected index to be less then {}, found {}", MAX_EID, max);
         }
     }
 
     /// Creates an empty `BitSet`, preallocated for up to `max` indices.
-    pub fn with_capacity(max: Index) -> BitSet {
+    pub fn with_capacity(max: Index) -> BitSet<N> {
         Self::valid_range(max);
         let mut value = BitSet::new();
         value.extend(max);
@@ -101,8 +112,9 @@ impl BitSet {
     #[inline(never)]
     fn extend(&mut self, id: Index) {
         Self::valid_range(id);
-        let (p0, p1, p2) = offsets(id);
+        let (p0, p1, p2, _p3) = offsets(id);
 
+        // Layer 3 has fixed length, no need to extend
         Self::fill_up(&mut self.layer2, p2);
         Self::fill_up(&mut self.layer1, p1);
         Self::fill_up(&mut self.layer0, p0);
@@ -118,10 +130,10 @@ impl BitSet {
     /// when the lowest layer was set from 0.
     #[inline(never)]
     fn add_slow(&mut self, id: Index) {
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, p3) = offsets(id);
         self.layer1[p1] |= id.mask(SHIFT1);
         self.layer2[p2] |= id.mask(SHIFT2);
-        self.layer3 |= id.mask(SHIFT3);
+        self.layer3[p3] |= id.mask(SHIFT3);
     }
 
     /// Adds `id` to the `BitSet`. Returns `true` if the value was
@@ -162,7 +174,7 @@ impl BitSet {
                 Self::fill_up(&mut self.layer2, idx);
                 &mut self.layer2[idx]
             }
-            3 => &mut self.layer3,
+            3 => &mut self.layer3[idx],
             _ => panic!("Invalid layer: {}", level),
         }
     }
@@ -172,7 +184,7 @@ impl BitSet {
     /// to begin with.
     #[inline]
     pub fn remove(&mut self, id: Index) -> bool {
-        let (p0, p1, p2) = offsets(id);
+        let (p0, p1, p2, p3) = offsets(id);
 
         if p0 >= self.layer0.len() {
             return false;
@@ -201,7 +213,7 @@ impl BitSet {
             return true;
         }
 
-        self.layer3 &= !id.mask(SHIFT3);
+        self.layer3[p3] &= !id.mask(SHIFT3);
         return true;
     }
 
@@ -214,7 +226,7 @@ impl BitSet {
 
     /// Returns `true` if all ids in `other` are contained in this set
     #[inline]
-    pub fn contains_set(&self, other: &BitSet) -> bool {
+    pub fn contains_set<const M: usize>(&self, other: &BitSet<M>) -> bool {
         for id in other.iter() {
             if !self.contains(id) {
                 return false;
@@ -228,7 +240,7 @@ impl BitSet {
         self.layer0.clear();
         self.layer1.clear();
         self.layer2.clear();
-        self.layer3 = 0;
+        self.layer3 = [0; N];
     }
 
     /// How many bits are in a `usize`.
@@ -392,7 +404,7 @@ impl BitSet {
 /// This arrangement allows for rapid jumps across the key-space.
 ///
 /// [`BitSetLike`]: ../trait.BitSetLike.html
-pub trait BitSetLike {
+pub trait BitSetLike<const N: usize> {
     /// Gets the `usize` corresponding to layer and index.
     ///
     /// The `layer` should be in the range [0, 3]
@@ -401,19 +413,25 @@ pub trait BitSetLike {
             0 => self.layer0(idx),
             1 => self.layer1(idx),
             2 => self.layer2(idx),
-            3 => self.layer3(),
+            3 => self.layer3()[idx],
             _ => panic!("Invalid layer: {}", layer),
         }
     }
 
     /// Returns true if this `BitSetLike` contains nothing, and false otherwise.
-    fn is_empty(&self) -> bool {
-        self.layer3() == 0
+    fn is_empty(&self) -> bool
+    {
+        for i in 0..N {
+            if self.layer3()[i] != 0 {
+                return false
+            }
+        }
+        true
     }
 
     /// Return a `usize` where each bit represents if any word in layer2
     /// has been set.
-    fn layer3(&self) -> usize;
+    fn layer3(&self) -> [usize; N];
 
     /// Return the `usize` from the array of usizes that indicates if any
     /// bit has been set in layer1
@@ -431,18 +449,20 @@ pub trait BitSetLike {
     fn contains(&self, i: Index) -> bool;
 
     /// Create an iterator that will scan over the keyspace
-    fn iter(self) -> BitIter<Self>
+    fn iter(self) -> BitIter<Self, N>
     where
-        Self: Sized,
+        Self: Sized
     {
-        let layer3 = self.layer3();
+        // TODO: How does the BitIter worl???
+        // let layer3 = self.layer3();
+        let top_mask = self.layer3();
 
-        BitIter::new(self, [0, 0, 0, layer3], [0; LAYERS - 1])
+        BitIter::new(self, top_mask, [0, 0, 0], [0; LAYERS])
     }
 
     /// Create a parallel iterator that will scan over the keyspace
     #[cfg(feature = "parallel")]
-    fn par_iter(self) -> BitParIter<Self>
+    fn par_iter(self) -> BitParIter<Self, N>
     where
         Self: Sized,
     {
@@ -451,29 +471,37 @@ pub trait BitSetLike {
 }
 
 /// A extension to the [`BitSetLike`] trait which allows draining it.
-pub trait DrainableBitSet: BitSetLike {
+pub trait DrainableBitSet<const N: usize>: BitSetLike<N> {
     /// Removes bit from the bit set.
     ///
     /// Returns `true` if removal happened and `false` otherwise.
     fn remove(&mut self, i: Index) -> bool;
 
     /// Create a draining iterator that will scan over the keyspace and clears it while doing so.
-    fn drain<'a>(&'a mut self) -> DrainBitIter<'a, Self>
+    fn drain<'a>(&'a mut self) -> DrainBitIter<'a, Self, N>
     where
-        Self: Sized,
+        Self: Sized
     {
-        let layer3 = self.layer3();
+        // TODO: how does the BitIter work?
+        // let layer3 = self.layer3();
+        let top_mask = self.layer3();
 
-        DrainBitIter::new(self, [0, 0, 0, layer3], [0; LAYERS - 1])
+        DrainBitIter::new(self, top_mask, [0, 0, 0], [0; LAYERS])
     }
 }
 
-impl<'a, T> BitSetLike for &'a T
+impl<'a, T, const N: usize> BitSetLike<N> for &'a T
 where
-    T: BitSetLike + ?Sized,
+    T: BitSetLike<N> + ?Sized,
 {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn is_empty(&self) -> bool {
+        (*self).is_empty()
+    }
+
+    /// Panics if index out of bound
+    #[inline]
+    fn layer3(&self) -> [usize; N] {
         (*self).layer3()
     }
 
@@ -496,14 +524,27 @@ where
     fn contains(&self, i: Index) -> bool {
         (*self).contains(i)
     }
+
+    #[inline]
+    fn iter(self) -> BitIter<Self, N>
+    where
+        Self: Sized 
+    {
+        self.iter()
+    }
 }
 
-impl<'a, T> BitSetLike for &'a mut T
+impl<'a, T, const N: usize> BitSetLike<N> for &'a mut T
 where
-    T: BitSetLike + ?Sized,
+    T: BitSetLike<N> + ?Sized,
 {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn is_empty(&self) -> bool {
+        (*self).is_empty()
+    }
+
+    #[inline]
+    fn layer3(&self) -> [usize; N] {
         (**self).layer3()
     }
 
@@ -526,21 +567,42 @@ where
     fn contains(&self, i: Index) -> bool {
         (**self).contains(i)
     }
+
+    #[inline]
+    fn iter(self) -> BitIter<Self, N>
+    where
+        Self: Sized 
+    {
+        self.iter()
+    }
 }
 
-impl<'a, T> DrainableBitSet for &'a mut T
+impl<'a, T, const N: usize> DrainableBitSet<N> for &'a mut T
 where
-    T: DrainableBitSet,
+    T: DrainableBitSet<N>,
 {
     #[inline]
     fn remove(&mut self, i: Index) -> bool {
         (**self).remove(i)
     }
+
+    #[inline]
+    fn drain<'b>(&'b mut self) -> DrainBitIter<'b, Self, N>
+    where
+        Self: Sized 
+    {
+        self.drain()
+    }
 }
 
-impl BitSetLike for BitSet {
+impl<const N: usize> BitSetLike<N> for BitSet<N> {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn is_empty(&self) -> bool {
+        self.layer3.iter().all(|&x| x==0)
+    }
+
+    #[inline]
+    fn layer3(&self) -> [usize; N] {
         self.layer3
     }
 
@@ -563,18 +625,33 @@ impl BitSetLike for BitSet {
     fn contains(&self, i: Index) -> bool {
         self.contains(i)
     }
+
+    #[inline]
+    fn iter(self) -> BitIter<Self, N>
+    where
+        Self: Sized 
+    {
+        todo!()
+    }
 }
 
-impl DrainableBitSet for BitSet {
+impl<const N: usize> DrainableBitSet<N> for BitSet<N> {
     #[inline]
     fn remove(&mut self, i: Index) -> bool {
         self.remove(i)
     }
+
+    fn drain<'a>(&'a mut self) -> DrainBitIter<'a, Self, N>
+    where
+        Self: Sized 
+    {
+        todo!()
+    }
 }
 
-impl PartialEq for BitSet {
+impl<const N: usize> PartialEq for BitSet<N> {
     #[inline]
-    fn eq(&self, rhv: &BitSet) -> bool {
+    fn eq(&self, rhv: &BitSet<N>) -> bool {
         if self.layer3 != rhv.layer3 {
             return false;
         }
@@ -604,7 +681,7 @@ impl PartialEq for BitSet {
         true
     }
 }
-impl Eq for BitSet {}
+impl<const N: usize> Eq for BitSet<N> {}
 
 #[cfg(test)]
 mod tests {

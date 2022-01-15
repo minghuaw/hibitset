@@ -15,11 +15,13 @@ pub const MAX_EID: usize = 2 << MAX - 1;
 /// Layer0 shift (bottom layer, true bitset).
 pub const SHIFT0: usize = 0;
 /// Layer1 shift (third layer).
-pub const SHIFT1: usize = SHIFT0 + BITS;
+pub const SHIFT1: usize = SHIFT0 + BITS; // if usize=u64, 1<<SHITF1 = 2^6 = 64
 /// Layer2 shift (second layer).
 pub const SHIFT2: usize = SHIFT1 + BITS;
 /// Top layer shift.
 pub const SHIFT3: usize = SHIFT2 + BITS;
+/// 
+pub const SHIFT4: usize = SHIFT3 + BITS;
 
 pub trait Row: Sized + Copy {
     /// Location of the bit in the row.
@@ -49,10 +51,14 @@ impl Row for Index {
 
 /// Helper method for getting parent offsets of 3 layers at once.
 ///
-/// Returns them in (Layer0, Layer1, Layer2) order.
+/// Returns them in (Layer0, Layer1, Layer2) order. 
+/// 
+/// ie. if 64-bit (Index / 64, Index / 4096, Index / 262144)
+/// 2^6 = 64, 2^12 = 4096, 2^18 = 262144
+/// 
 #[inline]
-pub fn offsets(bit: Index) -> (usize, usize, usize) {
-    (bit.offset(SHIFT1), bit.offset(SHIFT2), bit.offset(SHIFT3))
+pub fn offsets(bit: Index) -> (usize, usize, usize, usize) {
+    (bit.offset(SHIFT1), bit.offset(SHIFT2), bit.offset(SHIFT3), bit.offset(SHIFT4))
 }
 
 /// Finds the highest bit that splits set bits of the `usize`

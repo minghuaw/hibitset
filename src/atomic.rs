@@ -46,7 +46,7 @@ impl AtomicBitSet {
     /// this will panic if the Index is out of range.
     #[inline]
     pub fn add_atomic(&self, id: Index) -> bool {
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, _) = offsets(id);
 
         // While it is tempting to check of the bit was set and exit here if it
         // was, this can result in a data race. If this thread and another
@@ -65,7 +65,7 @@ impl AtomicBitSet {
     pub fn add(&mut self, id: Index) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
 
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, _) = offsets(id);
         if self.layer1[p1].add(id) {
             return true;
         }
@@ -82,7 +82,7 @@ impl AtomicBitSet {
     #[inline]
     pub fn remove(&mut self, id: Index) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, _) = offsets(id);
 
         // if the bitmask was set we need to clear
         // its bit from layer0 to 3. the layers above only
@@ -150,10 +150,16 @@ impl AtomicBitSet {
     }
 }
 
-impl BitSetLike for AtomicBitSet {
+impl BitSetLike<1> for AtomicBitSet {
     #[inline]
-    fn layer3(&self) -> usize {
-        self.layer3.load(Ordering::Relaxed)
+    fn is_empty(&self) -> bool {
+        self.layer3() == [0]
+    }
+
+    #[inline]
+    fn layer3(&self) -> [usize; 1] {
+        let layer3 = self.layer3.load(Ordering::Relaxed);
+        [layer3]
     }
     #[inline]
     fn layer2(&self, i: usize) -> usize {
@@ -176,12 +182,28 @@ impl BitSetLike for AtomicBitSet {
     fn contains(&self, i: Index) -> bool {
         self.contains(i)
     }
+
+    #[inline]
+    fn iter(self) -> crate::BitIter<Self, 1>
+    where
+        Self: Sized 
+    {
+        todo!()
+    }
 }
 
-impl DrainableBitSet for AtomicBitSet {
+impl DrainableBitSet<1> for AtomicBitSet {
     #[inline]
     fn remove(&mut self, i: Index) -> bool {
         self.remove(i)
+    }
+
+    #[inline]
+    fn drain<'a>(&'a mut self) -> crate::DrainBitIter<'a, Self, 1>
+    where
+        Self: Sized 
+    {
+        todo!()
     }
 }
 

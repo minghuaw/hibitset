@@ -14,34 +14,37 @@ mod parallel;
 ///
 /// [`BitSetLike`]: ../trait.BitSetLike.html
 #[derive(Debug, Clone)]
-pub struct BitIter<T> {
+pub struct BitIter<T, const N: usize> {
     pub(crate) set: T,
-    pub(crate) masks: [usize; LAYERS],
-    pub(crate) prefix: [u32; LAYERS - 1],
+    pub(crate) top_mask: [usize; N],
+    pub(crate) bot_masks: [usize; LAYERS - 1],
+    // pub(crate) prefix: [u32; LAYERS - 1],
+    pub(crate) prefix: [u32; LAYERS]
 }
 
-impl<T> BitIter<T> {
+impl<T, const N: usize> BitIter<T, N> {
     /// Creates a new `BitIter`. You usually don't call this function
     /// but just [`.iter()`] on a bit set.
     ///
     /// [`.iter()`]: ../trait.BitSetLike.html#method.iter
-    pub fn new(set: T, masks: [usize; LAYERS], prefix: [u32; LAYERS - 1]) -> Self {
+    pub fn new(set: T, top_mask: [usize; N], bot_masks: [usize; LAYERS - 1], prefix: [u32; LAYERS]) -> Self {
         BitIter {
-            set: set,
-            masks: masks,
-            prefix: prefix,
+            set,
+            top_mask,
+            bot_masks,
+            prefix,
         }
     }
 }
 
-impl<T: BitSetLike> BitIter<T> {
+impl<T: BitSetLike<N>, const N: usize> BitIter<T, N> {
     /// Allows checking if set bit is contained in underlying bit set.
     pub fn contains(&self, i: Index) -> bool {
         self.set.contains(i)
     }
 }
 
-impl<'a> BitIter<&'a mut BitSet> {
+impl<'a, const N: usize> BitIter<&'a mut BitSet<N>, N> {
     /// Clears the rest of the bitset starting from the next inner layer.
     pub(crate) fn clear(&mut self) {
         use self::State::Continue;
@@ -50,7 +53,9 @@ impl<'a> BitIter<&'a mut BitSet> {
             let idx = (self.prefix[lower] >> BITS) as usize;
             *self.set.layer_mut(lower, idx) = 0;
             if level == LAYERS - 1 {
-                self.set.layer3 &= !((2 << idx) - 1);
+                for i in 0..N {
+                    self.set.layer3[i] &= !((2 << idx) - 1);
+                }
             }
         }
     }
@@ -63,9 +68,9 @@ pub(crate) enum State {
     Value(Index),
 }
 
-impl<T> Iterator for BitIter<T>
+impl<T, const N: usize> Iterator for BitIter<T, N>
 where
-    T: BitSetLike,
+    T: BitSetLike<N>,
 {
     type Item = Index;
 
@@ -85,26 +90,47 @@ where
     }
 }
 
-impl<T: BitSetLike> BitIter<T> {
+impl<T: BitSetLike<N>, const N: usize> BitIter<T, N> {
     pub(crate) fn handle_level(&mut self, level: usize) -> State {
         use self::State::*;
-        if self.masks[level] == 0 {
-            Empty
-        } else {
-            // Take the first bit that isn't zero
-            let first_bit = self.masks[level].trailing_zeros();
-            // Remove it from the mask
-            self.masks[level] &= !(1 << first_bit);
-            // Calculate the index of it
-            let idx = self.prefix.get(level).cloned().unwrap_or(0) | first_bit;
-            if level == 0 {
-                // It's the lowest layer, so the `idx` is the next set bit
-                Value(idx)
+
+        // layer3 is the top layer
+        if level == 3 {
+            if self.top_mask == [0; N] {
+                Empty
             } else {
-                // Take the corresponding `usize` from the layer below
-                self.masks[level - 1] = self.set.get_from_layer(level - 1, idx as usize);
+                let mut first_bit = 0;
+                let mut mask = [0; N];
+                for i in 0..N {
+                    let trailing_zeros = self.top_mask[i].trailing_zeros();
+                    mask[i] &= !(1 << trailing_zeros);
+                    first_bit += trailing_zeros;
+                }
+                // TODO: what does this do?
+                let idx = self.prefix.get(level).cloned().unwrap_or(0) | first_bit;
+                self.bot_masks[level - 1] = self.set.get_from_layer(level - 1, idx as usize);
                 self.prefix[level - 1] = idx << BITS;
                 Continue
+            }
+        } else {
+            if self.bot_masks[level] == 0 {
+                Empty
+            } else {
+                // Take the first bit that isn't zero
+                let first_bit = self.bot_masks[level].trailing_zeros();
+                // Remove it from the mask
+                self.bot_masks[level] &= !(1 << first_bit);
+                // Calculate the index of it
+                let idx = self.prefix.get(level).cloned().unwrap_or(0) | first_bit;
+                if level == 0 {
+                    // It's the lowest layer, so the `idx` is the next set bit
+                    Value(idx)
+                } else {
+                    // Take the corresponding `usize` from the layer below
+                    self.bot_masks[level - 1] = self.set.get_from_layer(level - 1, idx as usize);
+                    self.prefix[level - 1] = idx << BITS;
+                    Continue
+                }
             }
         }
     }
@@ -125,7 +151,9 @@ mod tests {
             set.add(rng.gen_range(0, limit));
         }
         (&mut set).iter().clear();
-        assert_eq!(0, set.layer3);
+        for &i in &set.layer3 {
+            assert_eq!(0, i);
+        }
         for &i in &set.layer2 {
             assert_eq!(0, i);
         }

@@ -8,9 +8,9 @@ use util::average_ones;
 ///
 /// [`BitSetLike`]: ../../trait.BitSetLike.html
 #[derive(Debug)]
-pub struct BitParIter<T>(T, u8);
+pub struct BitParIter<T, const N: usize>(T, u8);
 
-impl<T> BitParIter<T> {
+impl<T, const N: usize> BitParIter<T, N> {
     /// Creates a new `BitParIter`. You usually don't call this function
     /// but just [`.par_iter()`] on a bit set.
     ///
@@ -54,9 +54,9 @@ impl<T> BitParIter<T> {
     }
 }
 
-impl<T> ParallelIterator for BitParIter<T>
+impl<T, const N: usize> ParallelIterator for BitParIter<T, N>
 where
-    T: BitSetLike + Send + Sync,
+    T: BitSetLike<N> + Send + Sync,
 {
     type Item = Index;
 
@@ -72,11 +72,11 @@ where
 ///
 /// Usually used internally by `BitParIter`.
 #[derive(Debug)]
-pub struct BitProducer<'a, T: 'a + Send + Sync>(pub BitIter<&'a T>, pub u8);
+pub struct BitProducer<'a, T: 'a + Send + Sync, const N: usize>(pub BitIter<&'a T, N>, pub u8);
 
-impl<'a, T: 'a + Send + Sync> UnindexedProducer for BitProducer<'a, T>
+impl<'a, T: 'a + Send + Sync, const N: usize> UnindexedProducer for BitProducer<'a, T, N>
 where
-    T: BitSetLike,
+    T: BitSetLike<N>,
 {
     type Item = Index;
 
@@ -112,28 +112,43 @@ where
         let splits = self.1;
         let other = {
             let mut handle_level = |level: usize| {
-                if self.0.masks[level] == 0 {
+                if level == LAYERS - 1 {
+                    // top layer
+                    if self.0.top_mask == [0; N] {
+                        None
+                    } else {
+                        let level_prefix = self.0.prefix.get(level).cloned().unwrap_or(0);
+                        let mut first_bit = 0;
+                        for i in 0..N {
+                            let trailing_zeros = self.0.top_mask[i].trailing_zeros();
+                            first_bit += trailing_zeros;
+                        }
+                    }
+                }
+                // bot layers
+                else if self.0.bot_masks[level] == 0 {
                     // Skip the empty layers
                     None
                 } else {
                     // Top levels prefix is zero because there is nothing before it
+                    // FIXME: This is probably not valid now, but leave it as it is
                     let level_prefix = self.0.prefix.get(level).cloned().unwrap_or(0);
-                    let first_bit = self.0.masks[level].trailing_zeros();
-                    average_ones(self.0.masks[level])
+                    let first_bit = self.0.bot_masks[level].trailing_zeros();
+                    average_ones(self.0.bot_masks[level])
                         .and_then(|average_bit| {
                             let mask = (1 << average_bit) - 1;
                             let mut other = BitProducer(
-                                BitIter::new(self.0.set, [0; LAYERS], [0; LAYERS - 1]),
+                                BitIter::new(self.0.set, [0; N], [0; LAYERS - 1], [0; LAYERS]),
                                 splits,
                             );
                             // The `other` is the more significant half of the mask
-                            other.0.masks[level] = self.0.masks[level] & !mask;
+                            other.0.bot_masks[level] = self.0.bot_masks[level] & !mask;
                             other.0.prefix[level - 1] = (level_prefix | average_bit as u32) << BITS;
                             // The upper portion of the prefix is maintained, because the `other`
                             // will iterate the same subtree as the `self` does
                             other.0.prefix[level..].copy_from_slice(&self.0.prefix[level..]);
                             // And the `self` is the less significant one
-                            self.0.masks[level] &= mask;
+                            self.0.bot_masks[level] &= mask;
                             self.0.prefix[level - 1] = (level_prefix | first_bit) << BITS;
                             Some(other)
                         })
@@ -143,8 +158,8 @@ where
                             self.0.prefix[level - 1] = (idx as u32) << BITS;
                             // The level that is descended from doesn't have anything
                             // interesting so it can be skipped in the future.
-                            self.0.masks[level] = 0;
-                            self.0.masks[level - 1] = self.0.set.get_from_layer(level - 1, idx);
+                            self.0.bot_masks[level] = 0;
+                            self.0.bot_masks[level - 1] = self.0.set.get_from_layer(level - 1, idx);
                             None
                         })
                 }
@@ -176,9 +191,9 @@ mod test_bit_producer {
     use util::BITS;
 
     fn test_splitting(split_levels: u8) {
-        fn visit<T>(mut us: BitProducer<T>, d: usize, i: usize, mut trail: String, c: &mut usize)
+        fn visit<T, const N: usize>(mut us: BitProducer<T, N>, d: usize, i: usize, mut trail: String, c: &mut usize)
         where
-            T: Send + Sync + BitSetLike,
+            T: Send + Sync + BitSetLike<N>,
         {
             if d == 0 {
                 assert!(us.split().1.is_none(), trail);
@@ -204,7 +219,7 @@ mod test_bit_producer {
             assert!(!c.add(i as u32));
         }
 
-        let us = BitProducer((&c).iter(), split_levels);
+        let us = BitProducer::<_, 1>((&c).iter(), split_levels);
         let (us, them) = us.split();
 
         let mut count = 0;
