@@ -34,8 +34,8 @@ pub trait Row: Sized + Copy {
 
     /// Bitmask of the row the bit is in.
     #[inline(always)]
-    fn mask(self, shift: usize) -> usize {
-        1usize << self.row(shift)
+    fn mask(self, shift: usize) -> u128 {
+        1u128 << self.row(shift)
     }
 }
 
@@ -76,12 +76,14 @@ pub fn offsets(bit: Index) -> (usize, usize, usize) {
 // TODO: Can 64/32 bit variants be merged to one implementation?
 // Seems that this would need integer generics to do.
 #[cfg(feature = "parallel")]
-pub fn average_ones(n: u128) -> Option<usize> {
-    #[cfg(target_pointer_width = "64")]
-    let average = average_ones_u64(n as u64).map(|n| n as usize);
+pub fn average_ones(n: u128) -> Option<u128> {
+    // #[cfg(target_pointer_width = "64")]
+    // let average = average_ones_u64(n as u64).map(|n| n as usize);
 
-    #[cfg(target_pointer_width = "32")]
-    let average = average_ones_u32(n as u32).map(|n| n as usize);
+    // #[cfg(target_pointer_width = "32")]
+    // let average = average_ones_u32(n as u32).map(|n| n as usize);
+
+    let average = average_ones_u128(n as u128);
 
     average
 }
@@ -120,8 +122,10 @@ fn average_ones_u32(n: u32) -> Option<u32> {
             cur = (child >> (result - child_stride)) & child_mask;
         };
         //(!PAR[n] & (PAR[n] + 1)) - 1
-        descend(c, 8, 16 - 1); // PAR[3]
-        descend(b, 4, 8 - 1); // PAR[2]
+        // descend(c, 8, 16 - 1); // PAR[3]
+        descend(c, 8, 256 - 1);
+        // descend(b, 4, 8 - 1); // PAR[2]
+        descend(b, 4, 16 -1);
         descend(a, 2, 4 - 1); // PAR[1]
         descend(n, 1, 2 - 1); // PAR[0]
     }
@@ -172,9 +176,15 @@ fn average_ones_u64(n: u64) -> Option<u64> {
             cur = (child >> (result - child_stride)) & child_mask;
         };
         //(!PAR[n] & (PAR[n] + 1)) - 1
-        descend(d, 16, 256 - 1); // PAR[4]
-        descend(c, 8, 16 - 1); // PAR[3]
-        descend(b, 4, 8 - 1); // PAR[2]
+        // descend(d, 16, 256 - 1); // PAR[4]
+        // descend(c, 8, 16 - 1); // PAR[3]
+        // descend(b, 4, 8 - 1); // PAR[2]
+        // descend(a, 2, 4 - 1); // PAR[1]
+        // descend(n, 1, 2 - 1); // PAR[0]
+
+        descend(d, 16, 65536 - 1); // PAR[4]
+        descend(c, 8, 256 - 1); // PAR[3]
+        descend(b, 4, 16 -1); // PAR[2]
         descend(a, 2, 4 - 1); // PAR[1]
         descend(n, 1, 2 - 1); // PAR[0]
     }
@@ -205,7 +215,7 @@ fn average_ones_u128(n: u128) -> Option<u128> {
     let e = (d + (d >> 16)) & PAR[4];
     let f = (e + (e >> 32)) & PAR[5];
     let mut cur = f >> 64;
-    let count = (e + cur) & PAR[6];
+    let count = (f + cur) & PAR[6];
     if count <= 1 {
         return None;
     }
@@ -226,10 +236,17 @@ fn average_ones_u128(n: u128) -> Option<u128> {
             cur = (child >> (result - child_stride)) & child_mask;
         };
         //(!PAR[n] & (PAR[n] + 1)) - 1
-        descend(e, 32, )
-        descend(d, 16, 256 - 1); // PAR[4]
-        descend(c, 8, 16 - 1); // PAR[3]
-        descend(b, 4, 8 - 1); // PAR[2]
+        // descend(e, 32, 65536 - 1); // FIXME: This is not following the rule, just trying different number
+        // descend(d, 16, 256 - 1); // PAR[4]
+        // descend(c, 8, 16 - 1); // PAR[3]
+        // descend(b, 4, 8 - 1); // PAR[2]
+        // descend(a, 2, 4 - 1); // PAR[1]
+        // descend(n, 1, 2 - 1); // PAR[0]
+
+        descend(e, 32, 4294967296 - 1); // PAR[5]
+        descend(d, 16, 65536 - 1); // PAR[4]
+        descend(c, 8, 256 - 1); // PAR[3]
+        descend(b, 4, 16 -1); // PAR[2]
         descend(a, 2, 4 - 1); // PAR[1]
         descend(n, 1, 2 - 1); // PAR[0]
     }
@@ -350,8 +367,15 @@ mod test_average_ones {
         for i in 0..steps {
             let pos = i * (u64::max_value() / steps);
             for i in EvenParity(pos).take(steps as usize) {
-                let mask = (1 << average_ones_u64(i).unwrap_or(63)) - 1;
-                assert_eq!((i & mask).count_ones(), (i & !mask).count_ones(), "{:x}", i);
+                let avg = average_ones_u64(i);
+                println!("{:?}", avg);
+                // let mask: u64 = (1 << avg.unwrap_or(63)) - 1;
+
+                // let left = (i & mask).count_ones();
+                // let right = (i & !mask).count_ones();
+                // println!("{:?}: {:?}, {:?}", i, left, right);
+                // assert_eq!(left, right, "{:x}", i);
+                // println!("{:?}, {:?}", mask.count_ones(), !mask.count_ones());
             }
         }
     }
@@ -434,5 +458,42 @@ mod test_average_ones {
         assert_eq!(Some(5), average_ones_u64(0b100010));
         assert_eq!(None, average_ones_u64(0));
         assert_eq!(None, average_ones_u64(1));
+    }
+
+    #[test]
+    fn parity_0_average_ones_u128() {
+        struct EvenParity(u128);
+
+        impl Iterator for EvenParity {
+            type Item = u128;
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.0 == u128::max_value() {
+                    return None;
+                }
+                self.0 += 1;
+                while self.0.count_ones() & 1 != 0 {
+                    if self.0 == u128::MAX {
+                        return None
+                    }
+                    self.0 += 1;
+                }
+                Some(self.0)
+            }
+        }
+
+        let steps = 1000;
+        for i in 0..steps {
+            let pos = i * (u128::max_value() / steps);
+            for i in EvenParity(pos).take(steps as usize) {
+                let avg = average_ones_u128(i);
+                // println!("{:?}", avg);
+                let mask: u128 = (1 << avg.unwrap_or(127)) - 1;
+                let left = (i & mask).count_ones();
+                let right = (i & !mask).count_ones();
+                // println!("{:?}: {:?} {:?}", i, left, right);
+                assert_eq!(left, right, "{:?}", i);
+                // println!("{:?}, {:?}", mask.count_ones(), !mask.count_ones());
+            }
+        }
     }
 }

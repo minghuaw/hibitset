@@ -1,5 +1,5 @@
-use util::*;
-use {BitSet, BitSetLike};
+use crate::util::*;
+use crate::{BitSet, BitSetLike};
 
 pub use self::drain::DrainBitIter;
 
@@ -112,7 +112,7 @@ impl<T: BitSetLike> BitIter<T> {
 
 #[cfg(test)]
 mod tests {
-    use {BitSet, BitSetLike};
+    use crate::{BitSet, BitSetLike};
 
     #[test]
     fn iterator_clear_empties() {

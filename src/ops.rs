@@ -2,16 +2,16 @@ use std::iter::{FromIterator, IntoIterator};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
 use std::usize;
 
-use util::*;
+use crate::util::*;
 
-use {AtomicBitSet, BitIter, BitSet, BitSetLike, DrainableBitSet};
+use crate::{AtomicBitSet, BitIter, BitSet, BitSetLike, DrainableBitSet};
 
 impl<'a, B> BitOrAssign<&'a B> for BitSet
 where
     B: BitSetLike,
 {
     fn bitor_assign(&mut self, lhs: &B) {
-        use iter::State::Continue;
+        use crate::iter::State::Continue;
         let mut iter = lhs.iter();
         while let Some(level) = (1..LAYERS).find(|&level| iter.handle_level(level) == Continue) {
             let lower = level - 1;
@@ -27,7 +27,7 @@ where
     B: BitSetLike,
 {
     fn bitand_assign(&mut self, lhs: &B) {
-        use iter::State::*;
+        use crate::iter::State::*;
         let mut iter = lhs.iter();
         iter.masks[LAYERS - 1] &= self.layer3();
         while let Some(level) = (1..LAYERS).find(|&level| iter.handle_level(level) == Continue) {
@@ -57,7 +57,7 @@ where
     B: BitSetLike,
 {
     fn bitxor_assign(&mut self, lhs: &B) {
-        use iter::State::*;
+        use crate::iter::State::*;
         let mut iter = lhs.iter();
         while let Some(level) = (1..LAYERS).find(|&level| iter.handle_level(level) == Continue) {
             let lower = level - 1;
@@ -98,19 +98,19 @@ pub struct BitSetAnd<A: BitSetLike, B: BitSetLike>(pub A, pub B);
 
 impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetAnd<A, B> {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn layer3(&self) -> u128 {
         self.0.layer3() & self.1.layer3()
     }
     #[inline]
-    fn layer2(&self, i: usize) -> usize {
+    fn layer2(&self, i: usize) -> u128 {
         self.0.layer2(i) & self.1.layer2(i)
     }
     #[inline]
-    fn layer1(&self, i: usize) -> usize {
+    fn layer1(&self, i: usize) -> u128 {
         self.0.layer1(i) & self.1.layer1(i)
     }
     #[inline]
-    fn layer0(&self, i: usize) -> usize {
+    fn layer0(&self, i: usize) -> u128 {
         self.0.layer0(i) & self.1.layer0(i)
     }
     #[inline]
@@ -142,19 +142,19 @@ pub struct BitSetOr<A: BitSetLike, B: BitSetLike>(pub A, pub B);
 
 impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetOr<A, B> {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn layer3(&self) -> u128 {
         self.0.layer3() | self.1.layer3()
     }
     #[inline]
-    fn layer2(&self, i: usize) -> usize {
+    fn layer2(&self, i: usize) -> u128 {
         self.0.layer2(i) | self.1.layer2(i)
     }
     #[inline]
-    fn layer1(&self, i: usize) -> usize {
+    fn layer1(&self, i: usize) -> u128 {
         self.0.layer1(i) | self.1.layer1(i)
     }
     #[inline]
-    fn layer0(&self, i: usize) -> usize {
+    fn layer0(&self, i: usize) -> u128 {
         self.0.layer0(i) | self.1.layer0(i)
     }
     #[inline]
@@ -185,19 +185,19 @@ pub struct BitSetNot<A: BitSetLike>(pub A);
 
 impl<A: BitSetLike> BitSetLike for BitSetNot<A> {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn layer3(&self) -> u128 {
         !0
     }
     #[inline]
-    fn layer2(&self, _: usize) -> usize {
+    fn layer2(&self, _: usize) -> u128 {
         !0
     }
     #[inline]
-    fn layer1(&self, _: usize) -> usize {
+    fn layer1(&self, _: usize) -> u128 {
         !0
     }
     #[inline]
-    fn layer0(&self, i: usize) -> usize {
+    fn layer0(&self, i: usize) -> u128 {
         !self.0.layer0(i)
     }
     #[inline]
@@ -216,7 +216,7 @@ pub struct BitSetXor<A: BitSetLike, B: BitSetLike>(pub A, pub B);
 
 impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetXor<A, B> {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn layer3(&self) -> u128 {
         let xor = BitSetAnd(
             BitSetOr(&self.0, &self.1),
             BitSetNot(BitSetAnd(&self.0, &self.1)),
@@ -224,7 +224,7 @@ impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetXor<A, B> {
         xor.layer3()
     }
     #[inline]
-    fn layer2(&self, id: usize) -> usize {
+    fn layer2(&self, id: usize) -> u128 {
         let xor = BitSetAnd(
             BitSetOr(&self.0, &self.1),
             BitSetNot(BitSetAnd(&self.0, &self.1)),
@@ -232,7 +232,7 @@ impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetXor<A, B> {
         xor.layer2(id)
     }
     #[inline]
-    fn layer1(&self, id: usize) -> usize {
+    fn layer1(&self, id: usize) -> u128 {
         let xor = BitSetAnd(
             BitSetOr(&self.0, &self.1),
             BitSetNot(BitSetAnd(&self.0, &self.1)),
@@ -240,7 +240,7 @@ impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetXor<A, B> {
         xor.layer1(id)
     }
     #[inline]
-    fn layer0(&self, id: usize) -> usize {
+    fn layer0(&self, id: usize) -> u128 {
         let xor = BitSetAnd(
             BitSetOr(&self.0, &self.1),
             BitSetNot(BitSetAnd(&self.0, &self.1)),
@@ -263,20 +263,20 @@ impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetXor<A, B> {
 pub struct BitSetAll;
 impl BitSetLike for BitSetAll {
     #[inline]
-    fn layer3(&self) -> usize {
-        usize::MAX
+    fn layer3(&self) -> u128 {
+        u128::MAX
     }
     #[inline]
-    fn layer2(&self, _id: usize) -> usize {
-        usize::MAX
+    fn layer2(&self, _id: usize) -> u128 {
+        u128::MAX
     }
     #[inline]
-    fn layer1(&self, _id: usize) -> usize {
-        usize::MAX
+    fn layer1(&self, _id: usize) -> u128 {
+        u128::MAX
     }
     #[inline]
-    fn layer0(&self, _id: usize) -> usize {
-        usize::MAX
+    fn layer0(&self, _id: usize) -> u128 {
+        u128::MAX
     }
     #[inline]
     fn contains(&self, _i: Index) -> bool {
@@ -410,7 +410,7 @@ iterator!(AtomicBitSet);
 
 #[cfg(test)]
 mod tests {
-    use {BitSet, BitSetLike, BitSetXor, Index};
+    use crate::{BitSet, BitSetLike, BitSetXor, Index};
 
     #[test]
     fn or_assign() {
@@ -493,7 +493,7 @@ mod tests {
 
     #[test]
     fn and_assign_specific() {
-        use util::BITS;
+        use crate::util::BITS;
 
         let mut c1 = BitSet::new();
         c1.add(0);
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn and_assign_with_modification() {
-        use util::BITS;
+        use crate::util::BITS;
 
         let mut c1 = BitSet::new();
         c1.add(0);
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn xor_assign_specific() {
-        use util::BITS;
+        use crate::util::BITS;
 
         let mut c1 = BitSet::new();
         c1.add(0);

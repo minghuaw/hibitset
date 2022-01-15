@@ -148,7 +148,7 @@ impl BitSet {
         false
     }
 
-    fn layer_mut(&mut self, level: usize, idx: usize) -> &mut usize {
+    fn layer_mut(&mut self, level: usize, idx: usize) -> &mut u128 {
         match level {
             0 => {
                 Self::fill_up(&mut self.layer0, idx);
@@ -283,7 +283,7 @@ impl BitSet {
     ///
     /// assert_eq!(slice[slice_index], 1 << bit_at_index);
     /// ```
-    pub fn layer0_as_slice(&self) -> &[usize] {
+    pub fn layer0_as_slice(&self) -> &[u128] {
         self.layer0.as_slice()
     }
 
@@ -329,7 +329,7 @@ impl BitSet {
     ///
     /// assert_eq!(slice[slice_index], 1 << bit_at_index);
     /// ```
-    pub fn layer1_as_slice(&self) -> &[usize] {
+    pub fn layer1_as_slice(&self) -> &[u128] {
         self.layer1.as_slice()
     }
 
@@ -374,7 +374,7 @@ impl BitSet {
     ///
     /// assert_eq!(slice[slice_index], 1 << bit_at_index);
     /// ```
-    pub fn layer2_as_slice(&self) -> &[usize] {
+    pub fn layer2_as_slice(&self) -> &[u128] {
         self.layer2.as_slice()
     }
 }
@@ -473,22 +473,22 @@ where
     T: BitSetLike + ?Sized,
 {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn layer3(&self) -> u128 {
         (*self).layer3()
     }
 
     #[inline]
-    fn layer2(&self, i: usize) -> usize {
+    fn layer2(&self, i: usize) -> u128 {
         (*self).layer2(i)
     }
 
     #[inline]
-    fn layer1(&self, i: usize) -> usize {
+    fn layer1(&self, i: usize) -> u128 {
         (*self).layer1(i)
     }
 
     #[inline]
-    fn layer0(&self, i: usize) -> usize {
+    fn layer0(&self, i: usize) -> u128 {
         (*self).layer0(i)
     }
 
@@ -503,22 +503,22 @@ where
     T: BitSetLike + ?Sized,
 {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn layer3(&self) -> u128 {
         (**self).layer3()
     }
 
     #[inline]
-    fn layer2(&self, i: usize) -> usize {
+    fn layer2(&self, i: usize) -> u128 {
         (**self).layer2(i)
     }
 
     #[inline]
-    fn layer1(&self, i: usize) -> usize {
+    fn layer1(&self, i: usize) -> u128 {
         (**self).layer1(i)
     }
 
     #[inline]
-    fn layer0(&self, i: usize) -> usize {
+    fn layer0(&self, i: usize) -> u128 {
         (**self).layer0(i)
     }
 
@@ -540,22 +540,22 @@ where
 
 impl BitSetLike for BitSet {
     #[inline]
-    fn layer3(&self) -> usize {
+    fn layer3(&self) -> u128 {
         self.layer3
     }
 
     #[inline]
-    fn layer2(&self, i: usize) -> usize {
+    fn layer2(&self, i: usize) -> u128 {
         self.layer2.get(i).map(|&x| x).unwrap_or(0)
     }
 
     #[inline]
-    fn layer1(&self, i: usize) -> usize {
+    fn layer1(&self, i: usize) -> u128 {
         self.layer1.get(i).map(|&x| x).unwrap_or(0)
     }
 
     #[inline]
-    fn layer0(&self, i: usize) -> usize {
+    fn layer0(&self, i: usize) -> u128 {
         self.layer0.get(i).map(|&x| x).unwrap_or(0)
     }
 
@@ -703,9 +703,9 @@ mod tests {
     fn iter_clusters() {
         let mut set = BitSet::new();
         for x in 0..8 {
-            let x = (x * 3) << (::BITS * 2); // scale to the last slot
+            let x = (x * 3) << (crate::BITS * 2); // scale to the last slot
             for y in 0..8 {
-                let y = (y * 3) << (::BITS);
+                let y = (y * 3) << (crate::BITS);
                 for z in 0..8 {
                     let z = z * 2;
                     set.add(x + y + z);
@@ -823,9 +823,9 @@ mod test_parallel {
         let mut set = BitSet::new();
         let mut check_set = HashSet::new();
         for x in 0..8 {
-            let x = (x * 3) << (::BITS * 2); // scale to the last slot
+            let x = (x * 3) << (crate::BITS * 2); // scale to the last slot
             for y in 0..8 {
-                let y = (y * 3) << (::BITS);
+                let y = (y * 3) << (crate::BITS);
                 for z in 0..8 {
                     let z = z * 2;
                     let index = x + y + z;

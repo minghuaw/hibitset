@@ -1,12 +1,14 @@
 use std::default::Default;
 use std::fmt::{Debug, Error as FormatError, Formatter};
 use std::iter::repeat;
-use std::sync::atomic::{AtomicUsize, Ordering};
+// use std::sync::atomic::{AtomicUsize, Ordering};
 
 use atom::AtomSetOnce;
 
-use util::*;
-use {BitSetLike, DrainableBitSet};
+use crossbeam_utils::atomic::AtomicCell;
+
+use crate::util::*;
+use crate::{BitSetLike, DrainableBitSet};
 
 /// This is similar to a [`BitSet`] but allows setting of value
 /// without unique ownership of the structure
@@ -28,8 +30,8 @@ use {BitSetLike, DrainableBitSet};
 /// [`BitSet`]: ../struct.BitSet.html
 #[derive(Debug)]
 pub struct AtomicBitSet {
-    layer3: AtomicUsize,
-    layer2: Vec<AtomicUsize>,
+    layer3: AtomicCell<u128>,
+    layer2: Vec<AtomicCell<u128>>,
     layer1: Vec<AtomicBlock>,
 }
 
@@ -54,8 +56,8 @@ impl AtomicBitSet {
         // to exit before l3 was set. Resulting in the iterator to be in an
         // incorrect state. The window is small, but it exists.
         let set = self.layer1[p1].add(id);
-        self.layer2[p2].fetch_or(id.mask(SHIFT2), Ordering::Relaxed);
-        self.layer3.fetch_or(id.mask(SHIFT3), Ordering::Relaxed);
+        self.layer2[p2].fetch_or(id.mask(SHIFT2));
+        self.layer3.fetch_or(id.mask(SHIFT3));
         set
     }
 
@@ -63,16 +65,16 @@ impl AtomicBitSet {
     /// already in the set.
     #[inline]
     pub fn add(&mut self, id: Index) -> bool {
-        use std::sync::atomic::Ordering::Relaxed;
+        // use std::sync::atomic::Ordering::Relaxed;
 
         let (_, p1, p2) = offsets(id);
         if self.layer1[p1].add(id) {
             return true;
         }
 
-        self.layer2[p2].store(self.layer2[p2].load(Relaxed) | id.mask(SHIFT2), Relaxed);
+        self.layer2[p2].store(self.layer2[p2].load() | id.mask(SHIFT2));
         self.layer3
-            .store(self.layer3.load(Relaxed) | id.mask(SHIFT3), Relaxed);
+            .store(self.layer3.load() | id.mask(SHIFT3));
         false
     }
 
@@ -81,7 +83,7 @@ impl AtomicBitSet {
     /// to begin with.
     #[inline]
     pub fn remove(&mut self, id: Index) -> bool {
-        use std::sync::atomic::Ordering::Relaxed;
+        // use std::sync::atomic::Ordering::Relaxed;
         let (_, p1, p2) = offsets(id);
 
         // if the bitmask was set we need to clear
@@ -94,18 +96,18 @@ impl AtomicBitSet {
         if !self.layer1[p1].remove(id) {
             return false;
         }
-        if self.layer1[p1].mask.load(Ordering::Relaxed) != 0 {
+        if self.layer1[p1].mask.load() != 0 {
             return true;
         }
 
-        let v = self.layer2[p2].load(Relaxed) & !id.mask(SHIFT2);
-        self.layer2[p2].store(v, Relaxed);
+        let v = self.layer2[p2].load() & !id.mask(SHIFT2);
+        self.layer2[p2].store(v);
         if v != 0 {
             return true;
         }
 
-        let v = self.layer3.load(Relaxed) & !id.mask(SHIFT3);
-        self.layer3.store(v, Relaxed);
+        let v = self.layer3.load() & !id.mask(SHIFT3);
+        self.layer3.store(v);
         return true;
     }
 
@@ -123,7 +125,7 @@ impl AtomicBitSet {
         // that are already clear. In the best case when the set is already cleared,
         // this will only touch the highest layer.
 
-        let (mut m3, mut m2) = (self.layer3.swap(0, Ordering::Relaxed), 0usize);
+        let (mut m3, mut m2) = (self.layer3.swap(0), 0u128);
         let mut offset = 0;
 
         loop {
@@ -142,7 +144,7 @@ impl AtomicBitSet {
                 let bit = m3.trailing_zeros() as usize;
                 m3 &= !(1 << bit);
                 offset = bit << BITS;
-                m2 = self.layer2[bit].swap(0, Ordering::Relaxed);
+                m2 = self.layer2[bit].swap(0);
                 continue;
             }
             break;
@@ -152,24 +154,24 @@ impl AtomicBitSet {
 
 impl BitSetLike for AtomicBitSet {
     #[inline]
-    fn layer3(&self) -> usize {
-        self.layer3.load(Ordering::Relaxed)
+    fn layer3(&self) -> u128 {
+        self.layer3.load()
     }
     #[inline]
-    fn layer2(&self, i: usize) -> usize {
-        self.layer2[i].load(Ordering::Relaxed)
+    fn layer2(&self, i: usize) -> u128 {
+        self.layer2[i].load()
     }
     #[inline]
-    fn layer1(&self, i: usize) -> usize {
-        self.layer1[i].mask.load(Ordering::Relaxed)
+    fn layer1(&self, i: usize) -> u128 {
+        self.layer1[i].mask.load()
     }
     #[inline]
-    fn layer0(&self, i: usize) -> usize {
+    fn layer0(&self, i: usize) -> u128 {
         let (o1, o0) = (i >> BITS, i & ((1 << BITS) - 1));
         self.layer1[o1]
             .atom
             .get()
-            .map(|l0| l0[o0].load(Ordering::Relaxed))
+            .map(|l0| l0[o0].load())
             .unwrap_or(0)
     }
     #[inline]
@@ -190,7 +192,7 @@ impl Default for AtomicBitSet {
         AtomicBitSet {
             layer3: Default::default(),
             layer2: repeat(0)
-                .map(|_| AtomicUsize::new(0))
+                .map(|_| AtomicCell::new(0))
                 .take(1 << BITS)
                 .collect(),
             layer1: repeat(0)
@@ -202,14 +204,14 @@ impl Default for AtomicBitSet {
 }
 
 struct AtomicBlock {
-    mask: AtomicUsize,
-    atom: AtomSetOnce<Box<[AtomicUsize; 1 << BITS]>>,
+    mask: AtomicCell<u128>,
+    atom: AtomSetOnce<Box<[AtomicCell<u128>; 1 << BITS]>>,
 }
 
 impl AtomicBlock {
     fn new() -> AtomicBlock {
         AtomicBlock {
-            mask: AtomicUsize::new(0),
+            mask: AtomicCell::new(0),
             atom: AtomSetOnce::empty(),
         }
     }
@@ -221,26 +223,26 @@ impl AtomicBlock {
         }
 
         let (i, m) = (id.row(SHIFT1), id.mask(SHIFT0));
-        let old = self.atom.get().unwrap()[i].fetch_or(m, Ordering::Relaxed);
-        self.mask.fetch_or(id.mask(SHIFT1), Ordering::Relaxed);
+        let old = self.atom.get().unwrap()[i].fetch_or(m);
+        self.mask.fetch_or(id.mask(SHIFT1));
         old & m != 0
     }
 
     fn contains(&self, id: Index) -> bool {
         self.atom
             .get()
-            .map(|l0| l0[id.row(SHIFT1)].load(Ordering::Relaxed) & id.mask(SHIFT0) != 0)
+            .map(|l0| l0[id.row(SHIFT1)].load() & id.mask(SHIFT0) != 0)
             .unwrap_or(false)
     }
 
     fn remove(&mut self, id: Index) -> bool {
         if let Some(l0) = self.atom.get_mut() {
             let (i, m) = (id.row(SHIFT1), !id.mask(SHIFT0));
-            let v = l0[i].load(Ordering::Relaxed);
-            l0[i].store(v & m, Ordering::Relaxed);
+            let v = l0[i].load();
+            l0[i].store(v & m);
             if v & m == 0 {
-                let v = self.mask.load(Ordering::Relaxed) & !id.mask(SHIFT1);
-                self.mask.store(v, Ordering::Relaxed);
+                let v = self.mask.load() & !id.mask(SHIFT1);
+                self.mask.store(v);
             }
             v & id.mask(SHIFT0) == id.mask(SHIFT0)
         } else {
@@ -249,10 +251,10 @@ impl AtomicBlock {
     }
 
     fn clear(&mut self) {
-        self.mask.store(0, Ordering::Relaxed);
+        self.mask.store(0);
         self.atom.get().map(|l0| {
             for l in &l0[..] {
-                l.store(0, Ordering::Relaxed);
+                l.store(0);
             }
         });
     }
@@ -269,7 +271,7 @@ impl Debug for AtomicBlock {
 
 #[cfg(test)]
 mod atomic_set_test {
-    use {AtomicBitSet, BitSetAnd, BitSetLike};
+    use crate::{AtomicBitSet, BitSetAnd, BitSetLike};
 
     #[test]
     fn insert() {

@@ -8,9 +8,11 @@ keywords = ["bitset", "container", "data-structures", "hierarchical"]
 categories = ["data-structures"]
 license = "MIT/Apache-2.0"
 authors = ["csheratt"]
+edition = "2021"
 
 [dependencies]
 atom = "0.3"
+crossbeam-utils = "0.8.6"
 
 [dependencies.rayon]
 version = "1.3"
