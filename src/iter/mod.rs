@@ -16,7 +16,7 @@ mod parallel;
 #[derive(Debug, Clone)]
 pub struct BitIter<T> {
     pub(crate) set: T,
-    pub(crate) masks: [usize; LAYERS],
+    pub(crate) masks: [u128; LAYERS],
     pub(crate) prefix: [u32; LAYERS - 1],
 }
 
@@ -25,7 +25,7 @@ impl<T> BitIter<T> {
     /// but just [`.iter()`] on a bit set.
     ///
     /// [`.iter()`]: ../trait.BitSetLike.html#method.iter
-    pub fn new(set: T, masks: [usize; LAYERS], prefix: [u32; LAYERS - 1]) -> Self {
+    pub fn new(set: T, masks: [u128; LAYERS], prefix: [u32; LAYERS - 1]) -> Self {
         BitIter {
             set: set,
             masks: masks,

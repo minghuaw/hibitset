@@ -21,4 +21,5 @@ rand = "0.7"
 
 [features]
 default = ["parallel"]
+
 parallel = ["rayon"]

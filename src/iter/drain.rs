@@ -14,7 +14,7 @@ impl<'a, T: DrainableBitSet> DrainBitIter<'a, T> {
     /// but just [`.drain()`] on a bit set.
     ///
     /// [`.drain()`]: ../trait.DrainableBitSet.html#method.drain
-    pub fn new(set: &'a mut T, masks: [usize; LAYERS], prefix: [u32; LAYERS - 1]) -> Self {
+    pub fn new(set: &'a mut T, masks: [u128; LAYERS], prefix: [u32; LAYERS - 1]) -> Self {
         DrainBitIter {
             iter: BitIter::new(set, masks, prefix),
         }

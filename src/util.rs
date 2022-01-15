@@ -1,11 +1,15 @@
 /// Type used for indexing.
 pub type Index = u32;
 
+// 2^7 = 128
+pub const BITS: usize = 7;
+
 /// Base two log of the number of bits in a usize.
-#[cfg(target_pointer_width = "64")]
-pub const BITS: usize = 6;
-#[cfg(target_pointer_width = "32")]
-pub const BITS: usize = 5;
+// #[cfg(all(target_pointer_width = "64", not(feature = "u128")))]
+// #[cfg(target_pointer_width = "64")]
+// pub const BITS: usize = 6;
+// #[cfg(target_pointer_width = "32")]
+// pub const BITS: usize = 5;
 /// Amount of layers in the hierarchical bitset.
 pub const LAYERS: usize = 4;
 pub const MAX: usize = BITS * LAYERS;
@@ -72,7 +76,7 @@ pub fn offsets(bit: Index) -> (usize, usize, usize) {
 // TODO: Can 64/32 bit variants be merged to one implementation?
 // Seems that this would need integer generics to do.
 #[cfg(feature = "parallel")]
-pub fn average_ones(n: usize) -> Option<usize> {
+pub fn average_ones(n: u128) -> Option<usize> {
     #[cfg(target_pointer_width = "64")]
     let average = average_ones_u64(n as u64).map(|n| n as usize);
 
@@ -81,6 +85,8 @@ pub fn average_ones(n: usize) -> Option<usize> {
 
     average
 }
+
+
 
 #[cfg(all(any(test, target_pointer_width = "32"), feature = "parallel"))]
 fn average_ones_u32(n: u32) -> Option<u32> {
@@ -166,6 +172,61 @@ fn average_ones_u64(n: u64) -> Option<u64> {
             cur = (child >> (result - child_stride)) & child_mask;
         };
         //(!PAR[n] & (PAR[n] + 1)) - 1
+        descend(d, 16, 256 - 1); // PAR[4]
+        descend(c, 8, 16 - 1); // PAR[3]
+        descend(b, 4, 8 - 1); // PAR[2]
+        descend(a, 2, 4 - 1); // PAR[1]
+        descend(n, 1, 2 - 1); // PAR[0]
+    }
+    if cur < target {
+        result -= 1;
+    }
+
+    Some(result - 1)
+}
+
+fn average_ones_u128(n: u128) -> Option<u128> {
+    // !0 / ((1 << (1 << n)) | 1)
+    const PAR: [u128; 7] = [
+        !0 / 0x3,           // !0 / 0b0000_0011
+        !0 / 0x5,           // !0 / 0b0000_0101
+        !0 / 0x11,          // !0 / 0b0001_0001
+        !0 / 0x101,         // !0 / 0b0001_0000_0001
+        !0 / 0x1_0001,      // !0 / 0b0001_0000_0000_0000_0001
+        !0 / 0x1_0000_0001,
+        !0 / 0x10000000000000001,
+    ];
+
+    // Counting set bits in parallel
+    let a = n - ((n >> 1) & PAR[0]);
+    let b = (a & PAR[1]) + ((a >> 2) & PAR[1]);
+    let c = (b + (b >> 4)) & PAR[2];
+    let d = (c + (c >> 8)) & PAR[3];
+    let e = (d + (d >> 16)) & PAR[4];
+    let f = (e + (e >> 32)) & PAR[5];
+    let mut cur = f >> 64;
+    let count = (e + cur) & PAR[6];
+    if count <= 1 {
+        return None;
+    }
+
+    // Amount of set bits that are wanted for both sides
+    let mut target = count / 2;
+
+    // Binary search
+    let mut result = 128;
+    {
+        let mut descend = |child, child_stride, child_mask| {
+            if cur < target {
+                result -= 2 * child_stride;
+                target -= cur;
+            }
+            // Descend to upper half or lower half
+            // depending on are we over or under
+            cur = (child >> (result - child_stride)) & child_mask;
+        };
+        //(!PAR[n] & (PAR[n] + 1)) - 1
+        descend(e, 32, )
         descend(d, 16, 256 - 1); // PAR[4]
         descend(c, 8, 16 - 1); // PAR[3]
         descend(b, 4, 8 - 1); // PAR[2]

@@ -71,10 +71,10 @@ use util::*;
 /// Adding beyond this limit will cause the `BitSet` to panic.
 #[derive(Clone, Debug, Default)]
 pub struct BitSet {
-    layer3: usize,
-    layer2: Vec<usize>,
-    layer1: Vec<usize>,
-    layer0: Vec<usize>,
+    layer3: u128,
+    layer2: Vec<u128>,
+    layer1: Vec<u128>,
+    layer0: Vec<u128>,
 }
 
 impl BitSet {
@@ -108,7 +108,7 @@ impl BitSet {
         Self::fill_up(&mut self.layer0, p0);
     }
 
-    fn fill_up(vec: &mut Vec<usize>, upper_index: usize) {
+    fn fill_up(vec: &mut Vec<u128>, upper_index: usize) {
         if vec.len() <= upper_index {
             vec.resize(upper_index + 1, 0);
         }
@@ -396,7 +396,7 @@ pub trait BitSetLike {
     /// Gets the `usize` corresponding to layer and index.
     ///
     /// The `layer` should be in the range [0, 3]
-    fn get_from_layer(&self, layer: usize, idx: usize) -> usize {
+    fn get_from_layer(&self, layer: usize, idx: usize) -> u128 {
         match layer {
             0 => self.layer0(idx),
             1 => self.layer1(idx),
@@ -413,19 +413,19 @@ pub trait BitSetLike {
 
     /// Return a `usize` where each bit represents if any word in layer2
     /// has been set.
-    fn layer3(&self) -> usize;
+    fn layer3(&self) -> u128;
 
     /// Return the `usize` from the array of usizes that indicates if any
     /// bit has been set in layer1
-    fn layer2(&self, i: usize) -> usize;
+    fn layer2(&self, i: usize) -> u128;
 
     /// Return the `usize` from the array of usizes that indicates if any
     /// bit has been set in layer0
-    fn layer1(&self, i: usize) -> usize;
+    fn layer1(&self, i: usize) -> u128;
 
     /// Return a `usize` that maps to the direct 1:1 association with
     /// each index of the set
-    fn layer0(&self, i: usize) -> usize;
+    fn layer0(&self, i: usize) -> u128;
 
     /// Allows checking if set bit is contained in the bit set.
     fn contains(&self, i: Index) -> bool;
