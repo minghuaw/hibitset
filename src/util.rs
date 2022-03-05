@@ -1,5 +1,5 @@
 /// Type used for indexing.
-pub type Index = u64;
+pub type Index = u32;
 
 // 2^7 = 128
 pub const BITS: usize = 7;
@@ -12,9 +12,10 @@ pub const BITS: usize = 7;
 // pub const BITS: usize = 5;
 /// Amount of layers in the hierarchical bitset.
 pub const LAYERS: usize = 5;
-pub const MAX: usize = BITS * LAYERS;
+// pub const MAX: usize = BITS * LAYERS;
 /// Maximum amount of bits per bitset.
-pub const MAX_EID: usize = 2 << MAX - 1;
+// pub const MAX_EID: usize = 2 << MAX - 1;
+pub const MAX_EID: usize = u32::MAX as usize;
 
 /// Layer0 shift (bottom layer, true bitset).
 pub const SHIFT0: usize = 0;

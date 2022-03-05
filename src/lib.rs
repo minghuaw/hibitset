@@ -86,7 +86,7 @@ impl BitSet {
 
     #[inline]
     fn valid_range(max: Index) {
-        if (MAX_EID as u64) < max {
+        if (MAX_EID as Index) < max {
             panic!("Expected index to be less then {}, found {}", MAX_EID, max);
         }
     }
@@ -284,7 +284,7 @@ impl BitSet {
     /// ```
     /// use hibitset::BitSet;
     ///
-    /// let index: u64 = 12345;
+    /// let index = 12345;
     ///
     /// let mut bitset = BitSet::new();
     /// bitset.add(index);
@@ -330,7 +330,7 @@ impl BitSet {
     /// ```
     /// use hibitset::BitSet;
     ///
-    /// let index: u64 = 12345;
+    /// let index = 12345;
     ///
     /// let mut bitset = BitSet::new();
     /// bitset.add(index);
@@ -375,7 +375,7 @@ impl BitSet {
     /// ```
     /// use hibitset::BitSet;
     ///
-    /// let index: u64 = 12345;
+    /// let index = 12345;
     ///
     /// let mut bitset = BitSet::new();
     /// bitset.add(index);
@@ -689,6 +689,14 @@ mod tests {
         for i in 0..100_000 {
             assert!(c.contains(i));
         }
+    }
+
+    #[test]
+    fn insert_max() {
+        let val = u32::MAX;
+        let mut c = BitSet::new();
+        c.add(val);
+        c.contains(val);
     }
 
     #[test]

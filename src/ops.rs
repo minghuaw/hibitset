@@ -441,7 +441,7 @@ mod tests {
         use std::collections::HashSet;
         use std::mem::size_of;
 
-        let usize_bits = size_of::<usize>() as u64 * 8;
+        let usize_bits = size_of::<usize>() as Index * 8;
         let n = 10_000;
         let f1 = &|n| 7 * usize_bits * n;
         let f2 = &|n| 13 * usize_bits * n;
