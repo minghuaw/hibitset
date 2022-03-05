@@ -30,7 +30,8 @@ use crate::{BitSetLike, DrainableBitSet};
 /// [`BitSet`]: ../struct.BitSet.html
 #[derive(Debug)]
 pub struct AtomicBitSet {
-    layer3: AtomicCell<u128>,
+    layer4: AtomicCell<u128>,
+    layer3: Vec<AtomicCell<u128>>,
     layer2: Vec<AtomicCell<u128>>,
     layer1: Vec<AtomicBlock>,
 }
@@ -48,7 +49,7 @@ impl AtomicBitSet {
     /// this will panic if the Index is out of range.
     #[inline]
     pub fn add_atomic(&self, id: Index) -> bool {
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, p3) = offsets(id);
 
         // While it is tempting to check of the bit was set and exit here if it
         // was, this can result in a data race. If this thread and another
@@ -57,7 +58,8 @@ impl AtomicBitSet {
         // incorrect state. The window is small, but it exists.
         let set = self.layer1[p1].add(id);
         self.layer2[p2].fetch_or(id.mask(SHIFT2));
-        self.layer3.fetch_or(id.mask(SHIFT3));
+        self.layer3[p3].fetch_or(id.mask(SHIFT3));
+        self.layer4.fetch_or(id.mask(SHIFT4));
         set
     }
 
@@ -67,14 +69,15 @@ impl AtomicBitSet {
     pub fn add(&mut self, id: Index) -> bool {
         // use std::sync::atomic::Ordering::Relaxed;
 
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, p3) = offsets(id);
         if self.layer1[p1].add(id) {
             return true;
         }
 
         self.layer2[p2].store(self.layer2[p2].load() | id.mask(SHIFT2));
-        self.layer3
-            .store(self.layer3.load() | id.mask(SHIFT3));
+        self.layer3[p3].store(self.layer3[p3].load() | id.mask(SHIFT3));
+        self.layer4
+            .store(self.layer4.load() | id.mask(SHIFT4));
         false
     }
 
@@ -84,7 +87,7 @@ impl AtomicBitSet {
     #[inline]
     pub fn remove(&mut self, id: Index) -> bool {
         // use std::sync::atomic::Ordering::Relaxed;
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, p3) = offsets(id);
 
         // if the bitmask was set we need to clear
         // its bit from layer0 to 3. the layers above only
@@ -106,8 +109,14 @@ impl AtomicBitSet {
             return true;
         }
 
-        let v = self.layer3.load() & !id.mask(SHIFT3);
-        self.layer3.store(v);
+        let v = self.layer3[p3].load() & !id.mask(SHIFT3);
+        self.layer3[p3].store(v);
+        if v != 0 {
+            return true;
+        }
+
+        let v = self.layer4.load() & !id.mask(SHIFT4);
+        self.layer4.store(v);
         return true;
     }
 
@@ -125,7 +134,7 @@ impl AtomicBitSet {
         // that are already clear. In the best case when the set is already cleared,
         // this will only touch the highest layer.
 
-        let (mut m3, mut m2) = (self.layer3.swap(0), 0u128);
+        let (mut m4, mut m3, mut m2) = (self.layer4.swap(0), 0u128, 0u128);
         let mut offset = 0;
 
         loop {
@@ -144,9 +153,18 @@ impl AtomicBitSet {
                 let bit = m3.trailing_zeros() as usize;
                 m3 &= !(1 << bit);
                 offset = bit << BITS;
-                m2 = self.layer2[bit].swap(0);
+                m2 = self.layer2[bit].swap(0); // FIXME: what does offset do?
                 continue;
             }
+
+            if m4 != 0 {
+                let bit = m4.trailing_zeros() as usize;
+                m4 &= !(1 << bit);
+                // offset = bit << BITS;
+                m3 = self.layer3[bit].swap(0);
+                continue;
+            }
+
             break;
         }
     }
@@ -154,8 +172,12 @@ impl AtomicBitSet {
 
 impl BitSetLike for AtomicBitSet {
     #[inline]
-    fn layer3(&self) -> u128 {
-        self.layer3.load()
+    fn layer4(&self) -> u128 {
+        self.layer4.load()
+    }
+    #[inline]
+    fn layer3(&self, i: usize) -> u128 {
+        self.layer3[i].load()
     }
     #[inline]
     fn layer2(&self, i: usize) -> u128 {
@@ -190,7 +212,11 @@ impl DrainableBitSet for AtomicBitSet {
 impl Default for AtomicBitSet {
     fn default() -> Self {
         AtomicBitSet {
-            layer3: Default::default(),
+            layer4: Default::default(),
+            layer3:  repeat(0)
+                .map(|_| AtomicCell::new(0))
+                .take(1 << BITS)
+                .collect(),
             layer2: repeat(0)
                 .map(|_| AtomicCell::new(0))
                 .take(1 << BITS)
@@ -271,7 +297,7 @@ impl Debug for AtomicBlock {
 
 #[cfg(test)]
 mod atomic_set_test {
-    use crate::{AtomicBitSet, BitSetAnd, BitSetLike};
+    use crate::{AtomicBitSet, BitSetAnd, BitSetLike, util::Index};
 
     #[test]
     fn insert() {
@@ -379,7 +405,7 @@ mod atomic_set_test {
             set.add(i);
         }
 
-        assert_eq!((&set).iter().sum::<u32>(), 500_500 - 1_000);
+        assert_eq!((&set).iter().sum::<Index>(), 500_500 - 1_000);
 
         assert_eq!((&set).iter().count(), 1_000);
         set.clear();

@@ -1,5 +1,5 @@
 /// Type used for indexing.
-pub type Index = u32;
+pub type Index = u64;
 
 // 2^7 = 128
 pub const BITS: usize = 7;
@@ -11,7 +11,7 @@ pub const BITS: usize = 7;
 // #[cfg(target_pointer_width = "32")]
 // pub const BITS: usize = 5;
 /// Amount of layers in the hierarchical bitset.
-pub const LAYERS: usize = 4;
+pub const LAYERS: usize = 5;
 pub const MAX: usize = BITS * LAYERS;
 /// Maximum amount of bits per bitset.
 pub const MAX_EID: usize = 2 << MAX - 1;
@@ -22,8 +22,10 @@ pub const SHIFT0: usize = 0;
 pub const SHIFT1: usize = SHIFT0 + BITS;
 /// Layer2 shift (second layer).
 pub const SHIFT2: usize = SHIFT1 + BITS;
-/// Top layer shift.
+/// Layer3 shift
 pub const SHIFT3: usize = SHIFT2 + BITS;
+/// Top layer shift.
+pub const SHIFT4: usize = SHIFT3 + BITS;
 
 pub trait Row: Sized + Copy {
     /// Location of the bit in the row.
@@ -53,10 +55,10 @@ impl Row for Index {
 
 /// Helper method for getting parent offsets of 3 layers at once.
 ///
-/// Returns them in (Layer0, Layer1, Layer2) order.
+/// Returns them in (Layer0, Layer1, Layer2, Layer3) order.
 #[inline]
-pub fn offsets(bit: Index) -> (usize, usize, usize) {
-    (bit.offset(SHIFT1), bit.offset(SHIFT2), bit.offset(SHIFT3))
+pub fn offsets(bit: Index) -> (usize, usize, usize, usize) {
+    (bit.offset(SHIFT1), bit.offset(SHIFT2), bit.offset(SHIFT3), bit.offset(SHIFT4))
 }
 
 /// Finds the highest bit that splits set bits of the `usize`
@@ -260,6 +262,12 @@ fn average_ones_u128(n: u128) -> Option<u128> {
 #[cfg(all(test, feature = "parallel"))]
 mod test_average_ones {
     use super::*;
+
+    #[test]
+    fn max_eid() {
+        println!("{:?}", 128u64.pow(5));
+    }
+
     #[test]
     fn parity_0_average_ones_u32() {
         struct EvenParity(u32);

@@ -71,7 +71,8 @@ use util::*;
 /// Adding beyond this limit will cause the `BitSet` to panic.
 #[derive(Clone, Debug, Default)]
 pub struct BitSet {
-    layer3: u128,
+    layer4: u128,
+    layer3: Vec<u128>,
     layer2: Vec<u128>,
     layer1: Vec<u128>,
     layer0: Vec<u128>,
@@ -85,7 +86,7 @@ impl BitSet {
 
     #[inline]
     fn valid_range(max: Index) {
-        if (MAX_EID as u32) < max {
+        if (MAX_EID as u64) < max {
             panic!("Expected index to be less then {}, found {}", MAX_EID, max);
         }
     }
@@ -101,8 +102,9 @@ impl BitSet {
     #[inline(never)]
     fn extend(&mut self, id: Index) {
         Self::valid_range(id);
-        let (p0, p1, p2) = offsets(id);
+        let (p0, p1, p2, p3) = offsets(id);
 
+        Self::fill_up(&mut self.layer3, p3);
         Self::fill_up(&mut self.layer2, p2);
         Self::fill_up(&mut self.layer1, p1);
         Self::fill_up(&mut self.layer0, p0);
@@ -118,10 +120,11 @@ impl BitSet {
     /// when the lowest layer was set from 0.
     #[inline(never)]
     fn add_slow(&mut self, id: Index) {
-        let (_, p1, p2) = offsets(id);
+        let (_, p1, p2, p3) = offsets(id);
         self.layer1[p1] |= id.mask(SHIFT1);
         self.layer2[p2] |= id.mask(SHIFT2);
-        self.layer3 |= id.mask(SHIFT3);
+        self.layer3[p3] |= id.mask(SHIFT3);
+        self.layer4 |= id.mask(SHIFT4);
     }
 
     /// Adds `id` to the `BitSet`. Returns `true` if the value was
@@ -162,7 +165,11 @@ impl BitSet {
                 Self::fill_up(&mut self.layer2, idx);
                 &mut self.layer2[idx]
             }
-            3 => &mut self.layer3,
+            3 => {
+                Self::fill_up(&mut self.layer3, idx);
+                &mut self.layer3[idx]
+            }
+            4 => &mut self.layer4,
             _ => panic!("Invalid layer: {}", level),
         }
     }
@@ -172,7 +179,7 @@ impl BitSet {
     /// to begin with.
     #[inline]
     pub fn remove(&mut self, id: Index) -> bool {
-        let (p0, p1, p2) = offsets(id);
+        let (p0, p1, p2, p3) = offsets(id);
 
         if p0 >= self.layer0.len() {
             return false;
@@ -201,7 +208,12 @@ impl BitSet {
             return true;
         }
 
-        self.layer3 &= !id.mask(SHIFT3);
+        self.layer3[p3] &= !id.mask(SHIFT3);
+        if self.layer3[p3] != 0 {
+            return true;
+        }
+
+        self.layer4 &= !id.mask(SHIFT4);
         return true;
     }
 
@@ -228,34 +240,38 @@ impl BitSet {
         self.layer0.clear();
         self.layer1.clear();
         self.layer2.clear();
-        self.layer3 = 0;
+        self.layer3.clear();
+        self.layer4 = 0;
     }
 
-    /// How many bits are in a `usize`.
-    ///
-    /// This value can be trivially determined. It is provided here as a constant for clarity.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use hibitset::BitSet;
-    /// assert_eq!(BitSet::BITS_PER_USIZE, std::mem::size_of::<usize>()*8);
-    /// ```
-    #[cfg(target_pointer_width = "32")]
-    pub const BITS_PER_USIZE: usize = 32;
+    // /// How many bits are in a `usize`.
+    // ///
+    // /// This value can be trivially determined. It is provided here as a constant for clarity.
+    // ///
+    // /// # Example
+    // ///
+    // /// ```
+    // /// use hibitset::BitSet;
+    // /// assert_eq!(BitSet::BITS_PER_USIZE, std::mem::size_of::<usize>()*8);
+    // /// ```
+    // #[cfg(target_pointer_width = "32")]
+    // pub const BITS_PER_USIZE: usize = 32;
 
-    /// How many bits are in a `usize`.
-    ///
-    /// This value can be trivially determined. It is provided here as a constant for clarity.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use hibitset::BitSet;
-    /// assert_eq!(BitSet::BITS_PER_USIZE, std::mem::size_of::<usize>()*8);
-    /// ```
-    #[cfg(target_pointer_width = "64")]
-    pub const BITS_PER_USIZE: usize = 64;
+    // /// How many bits are in a `usize`.
+    // ///
+    // /// This value can be trivially determined. It is provided here as a constant for clarity.
+    // ///
+    // /// # Example
+    // ///
+    // /// ```
+    // /// use hibitset::BitSet;
+    // /// assert_eq!(BitSet::BITS_PER_USIZE, std::mem::size_of::<usize>()*8);
+    // /// ```
+    // #[cfg(target_pointer_width = "64")]
+    // pub const BITS_PER_USIZE: usize = 64;
+
+    /// for u128 branch'
+    pub const BITS_PER_USIZE: usize = 128;
 
     /// Returns the bottom layer of the bitset as a slice. Each bit in this slice refers to a single
     /// `Index`.
@@ -268,7 +284,7 @@ impl BitSet {
     /// ```
     /// use hibitset::BitSet;
     ///
-    /// let index: u32 = 12345;
+    /// let index: u64 = 12345;
     ///
     /// let mut bitset = BitSet::new();
     /// bitset.add(index);
@@ -314,7 +330,7 @@ impl BitSet {
     /// ```
     /// use hibitset::BitSet;
     ///
-    /// let index: u32 = 12345;
+    /// let index: u64 = 12345;
     ///
     /// let mut bitset = BitSet::new();
     /// bitset.add(index);
@@ -359,7 +375,7 @@ impl BitSet {
     /// ```
     /// use hibitset::BitSet;
     ///
-    /// let index: u32 = 12345;
+    /// let index: u64 = 12345;
     ///
     /// let mut bitset = BitSet::new();
     /// bitset.add(index);
@@ -376,6 +392,25 @@ impl BitSet {
     /// ```
     pub fn layer2_as_slice(&self) -> &[u128] {
         self.layer2.as_slice()
+    }
+
+    /// How many `Index`es are described by as single layer 2 bit, intended for use with
+    /// `BitSet::layer2_as_slice()`.
+    ///
+    /// `BitSet`s are defined in terms of `usize`s summarizing `usize`s, so this value can be
+    /// trivially determined. It is provided here as a constant for clarity.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hibitset::BitSet;
+    /// assert_eq!(BitSet::LAYER2_GRANULARITY, BitSet::LAYER1_GRANULARITY * BitSet::BITS_PER_USIZE);
+    /// ```
+    pub const LAYER3_GRANULARITY: usize = Self::LAYER2_GRANULARITY * Self::BITS_PER_USIZE;
+
+    /// Copied and modified from `layer2_as_slice`
+    pub fn layer3_as_slice(&self) -> &[u128] {
+        self.layer3.as_slice()
     }
 }
 
@@ -401,19 +436,24 @@ pub trait BitSetLike {
             0 => self.layer0(idx),
             1 => self.layer1(idx),
             2 => self.layer2(idx),
-            3 => self.layer3(),
+            3 => self.layer3(idx),
+            4 => self.layer4(),
             _ => panic!("Invalid layer: {}", layer),
         }
     }
 
     /// Returns true if this `BitSetLike` contains nothing, and false otherwise.
     fn is_empty(&self) -> bool {
-        self.layer3() == 0
+        self.layer4() == 0
     }
 
     /// Return a `usize` where each bit represents if any word in layer2
     /// has been set.
-    fn layer3(&self) -> u128;
+    fn layer4(&self) -> u128;
+
+    /// Return the `usize` from the array of usizes that indicates if any
+    /// bit has been set in layer1
+    fn layer3(&self, i: usize) -> u128;
 
     /// Return the `usize` from the array of usizes that indicates if any
     /// bit has been set in layer1
@@ -435,9 +475,9 @@ pub trait BitSetLike {
     where
         Self: Sized,
     {
-        let layer3 = self.layer3();
+        let layer4 = self.layer4();
 
-        BitIter::new(self, [0, 0, 0, layer3], [0; LAYERS - 1])
+        BitIter::new(self, [0, 0, 0, 0, layer4], [0; LAYERS - 1])
     }
 
     /// Create a parallel iterator that will scan over the keyspace
@@ -462,9 +502,9 @@ pub trait DrainableBitSet: BitSetLike {
     where
         Self: Sized,
     {
-        let layer3 = self.layer3();
+        let layer4 = self.layer4();
 
-        DrainBitIter::new(self, [0, 0, 0, layer3], [0; LAYERS - 1])
+        DrainBitIter::new(self, [0, 0, 0, 0, layer4], [0; LAYERS - 1])
     }
 }
 
@@ -473,8 +513,13 @@ where
     T: BitSetLike + ?Sized,
 {
     #[inline]
-    fn layer3(&self) -> u128 {
-        (*self).layer3()
+    fn layer4(&self) -> u128 {
+        (*self).layer4()
+    }
+
+    #[inline]
+    fn layer3(&self, i: usize) -> u128 {
+        (*self).layer3(i)
     }
 
     #[inline]
@@ -503,8 +548,13 @@ where
     T: BitSetLike + ?Sized,
 {
     #[inline]
-    fn layer3(&self) -> u128 {
-        (**self).layer3()
+    fn layer4(&self) -> u128 {
+        (**self).layer4()
+    }
+
+    #[inline]
+    fn layer3(&self, i: usize) -> u128 {
+        (**self).layer3(i)
     }
 
     #[inline]
@@ -540,8 +590,13 @@ where
 
 impl BitSetLike for BitSet {
     #[inline]
-    fn layer3(&self) -> u128 {
-        self.layer3
+    fn layer4(&self) -> u128 {
+        self.layer4
+    }
+
+    #[inline]
+    fn layer3(&self, i: usize) -> u128 {
+        self.layer3.get(i).map(|&x| x).unwrap_or(0)
     }
 
     #[inline]
@@ -635,6 +690,7 @@ mod tests {
             assert!(c.contains(i));
         }
     }
+
     #[test]
     fn remove() {
         let mut c = BitSet::new();

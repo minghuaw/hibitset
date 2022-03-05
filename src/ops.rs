@@ -18,7 +18,7 @@ where
             let idx = iter.prefix[lower] as usize >> BITS;
             *self.layer_mut(lower, idx) |= lhs.get_from_layer(lower, idx);
         }
-        self.layer3 |= lhs.layer3();
+        self.layer4 |= lhs.layer4();
     }
 }
 
@@ -29,7 +29,7 @@ where
     fn bitand_assign(&mut self, lhs: &B) {
         use crate::iter::State::*;
         let mut iter = lhs.iter();
-        iter.masks[LAYERS - 1] &= self.layer3();
+        iter.masks[LAYERS - 1] &= self.layer4();
         while let Some(level) = (1..LAYERS).find(|&level| iter.handle_level(level) == Continue) {
             let lower = level - 1;
             let idx = iter.prefix[lower] as usize >> BITS;
@@ -45,10 +45,10 @@ where
             *self.layer_mut(lower, idx) &= their_layer;
         }
         let mut masks = [0; LAYERS];
-        masks[LAYERS - 1] = self.layer3() & !lhs.layer3();
+        masks[LAYERS - 1] = self.layer4() & !lhs.layer4();
         BitIter::new(&mut *self, masks, [0; LAYERS - 1]).clear();
 
-        self.layer3 &= lhs.layer3();
+        self.layer4 &= lhs.layer4();
     }
 }
 
@@ -98,8 +98,12 @@ pub struct BitSetAnd<A: BitSetLike, B: BitSetLike>(pub A, pub B);
 
 impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetAnd<A, B> {
     #[inline]
-    fn layer3(&self) -> u128 {
-        self.0.layer3() & self.1.layer3()
+    fn layer4(&self) -> u128 {
+        self.0.layer4() & self.1.layer4()
+    }
+    #[inline]
+    fn layer3(&self, i: usize) -> u128 {
+        self.0.layer3(i) & self.1.layer3(i)
     }
     #[inline]
     fn layer2(&self, i: usize) -> u128 {
@@ -142,8 +146,12 @@ pub struct BitSetOr<A: BitSetLike, B: BitSetLike>(pub A, pub B);
 
 impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetOr<A, B> {
     #[inline]
-    fn layer3(&self) -> u128 {
-        self.0.layer3() | self.1.layer3()
+    fn layer4(&self) -> u128 {
+        self.0.layer4() | self.1.layer4()
+    }
+    #[inline]
+    fn layer3(&self, i: usize) -> u128 {
+        self.0.layer3(i) | self.1.layer3(i)
     }
     #[inline]
     fn layer2(&self, i: usize) -> u128 {
@@ -185,7 +193,11 @@ pub struct BitSetNot<A: BitSetLike>(pub A);
 
 impl<A: BitSetLike> BitSetLike for BitSetNot<A> {
     #[inline]
-    fn layer3(&self) -> u128 {
+    fn layer4(&self) -> u128 {
+        !0
+    }
+    #[inline]
+    fn layer3(&self, _: usize) -> u128 {
         !0
     }
     #[inline]
@@ -216,12 +228,20 @@ pub struct BitSetXor<A: BitSetLike, B: BitSetLike>(pub A, pub B);
 
 impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetXor<A, B> {
     #[inline]
-    fn layer3(&self) -> u128 {
+    fn layer4(&self) -> u128 {
         let xor = BitSetAnd(
             BitSetOr(&self.0, &self.1),
             BitSetNot(BitSetAnd(&self.0, &self.1)),
         );
-        xor.layer3()
+        xor.layer4()
+    }
+    #[inline]
+    fn layer3(&self, id: usize) -> u128 {
+        let xor = BitSetAnd(
+            BitSetOr(&self.0, &self.1),
+            BitSetNot(BitSetAnd(&self.0, &self.1)),
+        );
+        xor.layer3(id)
     }
     #[inline]
     fn layer2(&self, id: usize) -> u128 {
@@ -263,7 +283,11 @@ impl<A: BitSetLike, B: BitSetLike> BitSetLike for BitSetXor<A, B> {
 pub struct BitSetAll;
 impl BitSetLike for BitSetAll {
     #[inline]
-    fn layer3(&self) -> u128 {
+    fn layer4(&self) -> u128 {
+        u128::MAX
+    }
+    #[inline]
+    fn layer3(&self, _id: usize) -> u128 {
         u128::MAX
     }
     #[inline]
@@ -417,7 +441,7 @@ mod tests {
         use std::collections::HashSet;
         use std::mem::size_of;
 
-        let usize_bits = size_of::<usize>() as u32 * 8;
+        let usize_bits = size_of::<usize>() as u64 * 8;
         let n = 10_000;
         let f1 = &|n| 7 * usize_bits * n;
         let f2 = &|n| 13 * usize_bits * n;
@@ -476,7 +500,7 @@ mod tests {
         use std::collections::HashSet;
         use std::mem::size_of;
 
-        let usize_bits = size_of::<usize>() as u32 * 8;
+        let usize_bits = size_of::<usize>() as Index * 8;
         let n = 10_000;
         let f1 = &|n| 7 * usize_bits * n;
         let f2 = &|n| 13 * usize_bits * n;
@@ -573,7 +597,7 @@ mod tests {
         use std::collections::HashSet;
         use std::mem::size_of;
 
-        let usize_bits = size_of::<usize>() as u32 * 8;
+        let usize_bits = size_of::<usize>() as Index * 8;
         let n = 10_000;
         let f1 = &|n| 7 * usize_bits * n;
         let f2 = &|n| 13 * usize_bits * n;

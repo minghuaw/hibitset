@@ -50,7 +50,7 @@ impl<'a> BitIter<&'a mut BitSet> {
             let idx = (self.prefix[lower] >> BITS) as usize;
             *self.set.layer_mut(lower, idx) = 0;
             if level == LAYERS - 1 {
-                self.set.layer3 &= !((2 << idx) - 1);
+                self.set.layer4 &= !((2 << idx) - 1);
             }
         }
     }
@@ -99,7 +99,7 @@ impl<T: BitSetLike> BitIter<T> {
             let idx = self.prefix.get(level).cloned().unwrap_or(0) | first_bit;
             if level == 0 {
                 // It's the lowest layer, so the `idx` is the next set bit
-                Value(idx)
+                Value(idx as Index)
             } else {
                 // Take the corresponding `usize` from the layer below
                 self.masks[level - 1] = self.set.get_from_layer(level - 1, idx as usize);
@@ -125,7 +125,10 @@ mod tests {
             set.add(rng.gen_range(0, limit));
         }
         (&mut set).iter().clear();
-        assert_eq!(0, set.layer3);
+        assert_eq!(0, set.layer4);
+        for &i in &set.layer3 {
+            assert_eq!(0, i);
+        }
         for &i in &set.layer2 {
             assert_eq!(0, i);
         }

@@ -173,7 +173,7 @@ mod test_bit_producer {
 
     use super::BitProducer;
     use crate::iter::BitSetLike;
-    use crate::util::BITS;
+    use crate::util::{BITS, Index, LAYERS};
 
     fn test_splitting(split_levels: u8) {
         fn visit<T>(mut us: BitProducer<T>, d: usize, i: usize, mut trail: String, c: &mut usize)
@@ -197,12 +197,18 @@ mod test_bit_producer {
             }
         }
 
-        let usize_bits = ::std::mem::size_of::<usize>() * 8;
+        // let usize_bits = ::std::mem::size_of::<usize>() * 8;
+        let usize_bits = ::std::mem::size_of::<u128>() * 8;
 
         let mut c = crate::BitSet::new();
-        for i in 0..(usize_bits.pow(3) * 2) {
-            assert!(!c.add(i as u32));
+        let mut counter: u64 = 0;
+        for i in 0..(usize_bits.pow(LAYERS as u32 - 1) * 2) {
+            counter += 1;
+            assert!(!c.add(i as Index));
         }
+
+        // println!("{:?}", counter);
+        // println!("{:?}", c.layer4());
 
         let us = BitProducer((&c).iter(), split_levels);
         let (us, them) = us.split();
